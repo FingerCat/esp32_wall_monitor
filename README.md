@@ -1,6 +1,8 @@
 # esp32_wall_monitor
 
-This is a simple python app to see WiFi signals
+This is a simple python and html app 
+
+to see WiFi signals
 
 and motions with an ESP32 with a 3D WebUi.
 
