@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 3D Signal Viewer</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #header {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        #status {
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .connected { background: #27ae60; }
+        .disconnected { background: #c0392b; }
+        #plot-container {
+            position: fixed;
+            top: 120px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        #info {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 101;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        .metric {
+            margin: 5px 0;
+        }
+        .value {
+            font-weight: bold;
+            color: #3498db;
+        }
+        .motion {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h2>🏠 ESP32 3D Signal Visualizer</h2>
+        <div id="status" class="disconnected">Connecting to server...</div>
+    </div>
+    
+    <div id="plot-container"></div>
+    
+    <div id="info">
+        <h3>📊 Live Data</h3>
+        <div class="metric">Points: <span id="point-count" class="value">0</span></div>
+        <div class="metric">Motion: <span id="motion-status" class="value">None</span></div>
+        <div class="metric">Avg Signal: <span id="avg-signal" class="value">--</span> dBm</div>
+        <div class="metric">Strongest: <span id="strongest" class="value">--</span> dBm</div>
+        <hr>
+        <button onclick="resetView()">Reset Camera</button>
+        <button onclick="toggleGrid()">Toggle Grid</button>
+        <div style="font-size: 11px; margin-top: 10px; opacity: 0.7;">
+            ⚠️ Visualization of SIGNAL STRENGTH<br>
+            NOT actual "see through walls"
+        </div>
+    </div>
+    <script>
+        const socket = io();
+        let showGrid = true;
+        
+        // Layout configuration
+        const layout = {
+            title: {
+                text: 'Wi-Fi Signal Strength in 3D Space',
+                font: { size: 16 }
+            },
+            scene: {
+                xaxis: { 
+                    title: 'X Position (meters)', 
+                    range: [0, 10],
+                    gridcolor: '#444',
+                    showgrid: true
+                },
+                yaxis: { 
+                    title: 'Y Position (meters)', 
+                    range: [0, 10],
+                    gridcolor: '#444',
+                    showgrid: true
+                },
+                zaxis: { 
+                    title: 'Signal Strength (dBm)', 
+                    range: [-80, -30],
+                    gridcolor: '#444'
+                },
+                bgcolor: '#1a1a1a',
+                camera: {
+                    eye: { x: 1.5, y: 1.5, z: 1.5 }
+                }
+            },
+            paper_bgcolor: '#1a1a1a',
+            plot_bgcolor: '#1a1a1a',
+            font: { color: 'white' },
+            showlegend: true,
+            legend: { x: 1, y: 1 },
+            margin: { l: 0, r: 0, t: 40, b: 0 }
+        };
+        
+        function update3D(points) {
+            if (!points  points.length === 0) {
+                console.log('No points received');
+                return;
+            }
+            
+            console.log(`Updating 3D plot with ${points.length} points`);
+            
+            // Separate motion and no-motion points
+            const motionPoints = points.filter(p => p.motion === true);
+            const noMotionPoints = points.filter(p => p.motion === false);
+            
+            // Trace for motion detection (red, larger)
+            const motionTrace = {
+                x: motionPoints.map(p => p.x),
+                y: motionPoints.map(p => p.y),
+                z: motionPoints.map(p => p.rssi),
+                mode: 'markers',
+                type: 'scatter3d',
+                name: '🔴 Motion Detected',
+                marker: {
+                    size: motionPoints.map(p => p.size  12),
+                    color: 'red',
+                    symbol: 'circle',
+                    line: { width: 1, color: 'white' }
+                },
+                text: motionPoints.map(p => RSSI: ${p.rssi.toFixed(1)} dBm),
+                hoverinfo: 'text'
+            };
+            
+            // Trace for normal signals (color by strength)
+            const signalTrace = {
+                x: noMotionPoints.map(p => p.x),
+                y: noMotionPoints.map(p => p.y),
+                z: noMotionPoints.map(p => p.rssi),
+                mode: 'markers',
+                type: 'scatter3d',
+                name: '📡 Signal Points',
+                marker: {
+                size: noMotionPoints.map(p => p.size  8),
+                    color: noMotionPoints.map(p => p.rssi),
+                    colorscale: [
+                        [0, 'purple'],
+                        [0.3, 'blue'],
+                        [0.6, 'green'],
+                        [0.8, 'yellow'],
+                        [1, 'red']
+                    ],
+                    colorbar: {
+                        title: 'RSSI (dBm)',
+                        titleside: 'right'
+                    },
+                    showscale: true
+                },
+                text: noMotionPoints.map(p => `RSSI: ${p.rssi.toFixed(1)} dBm`),
+                hoverinfo: 'text'
+            };
+            
+            const traces = [signalTrace];
+            if (motionPoints.length > 0) {
+                traces.push(motionTrace);
+            }
+            
+            // Add surface grid if enabled
+            if (showGrid && points.length > 5) {
+                try {
+                    // Create a simple grid surface
+                    const xGrid = [0, 5, 10];
+                    const yGrid = [0, 5, 10];
+                    const zGrid = [];
+                    
+                    for (let i = 0; i < xGrid.length; i++) {
+                        zGrid[i] = [];
+                        for (let j = 0; j < yGrid.length; j++) {
+                            // Find nearest point's signal
+                            let nearestDist = Infinity;
+                            let nearestRssi = -60;
+                            for (let p of points) {
+                                const dist = Math.hypot(p.x - xGrid[i], p.y - yGrid[j]);
+                                if (dist < nearestDist) {
+                                    nearestDist = dist;
+                                    nearestRssi = p.rssi;
+                                }
+                            }
+                            zGrid[i][j] = nearestRssi;
+                        }
+                    }
+                    
+                    const surfaceTrace = {
+                        x: xGrid,
+                        y: yGrid,
+                        z: zGrid,
+                        type: 'surface',
+                        name: 'Signal Surface',
+                        opacity: 0.3,
+                        colorscale: 'Viridis',
+                        showscale: false,
+                        hoverinfo: 'skip'
+                    };
+                    traces.push(surfaceTrace);
+                } catch(e) {
+                    console.log('Could not create surface:', e);
+                }
+            }
+            
+            // Update the plot
+            Plotly.react('plot-container', traces, layout, { responsive: true });
+            
+            // Update info panel
+            document.getElementById('point-count').innerHTML = points.length;
+            
+            const motionCount = motionPoints.length;
+            document.getElementById('motion-status').innerHTML = motionCount > 0 ? 
+                `<span class="motion">🔴 ${motionCount} detections</span>` : 'None';
+            
+            const avgRssi = points.reduce((sum, p) => sum + p.rssi, 0) / points.length;
+            document.getElementById('avg-signal').innerHTML = avgRssi.toFixed(1);
+            
+            const strongest = Math.max(...points.map(p => p.rssi));
+            document.getElementById('strongest').innerHTML = strongest.toFixed(1);
+        }
+        
+        function resetView() {
+            Plotly.relayout('plot-container', {
+                'scene.camera': { eye: { x: 1.5, y: 1.5, z: 1.5 } }
+            });
+        }
+        
+        function toggleGrid() {
+            showGrid = !showGrid;
+            const points = window.currentPoints  [];
+            update3D(points);
+        }
+        
+        // Socket event handlers
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            document.getElementById('status').innerHTML = '✅ Connected to ESP32';
+            document.getElementById('status').className = 'connected';
+        });
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            document.getElementById('status').innerHTML = '❌ Disconnected from server';
+            document.getElementById('status').className = 'disconnected';
+        });
+        
+        socket.on('3d_update', (points) => {
+            console.log(Received ${points.length} 3D points);
+            window.currentPoints = points;
+            update3D(points);
+        });
+        
+        socket.on('connected', (data) => {
+            console.log('Server message:', data);
+        });
+        
+        // Initial plot
+        console.log('Page loaded, waiting for data...');
+        
+        // Request initial data
+        fetch('/api/data')
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    console.log('Initial data:', data.length, 'points');
+                    update3D(data);
+                }
+            })
+            .catch(err => console.error('Error fetching initial data:', err));
+    </script>
+</body>
+</html>
