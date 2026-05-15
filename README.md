@@ -8,7 +8,7 @@ to see WiFi signals and motions with an ESP32 with a 3D WebUi.
 
 create a file named app.py
 
-2. Copy the python script into it.
+2. Copy the python script into app.py
 
 3. Create another folder into esp32_wall_monitor
 
