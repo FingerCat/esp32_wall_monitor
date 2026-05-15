@@ -14,7 +14,7 @@ create a file named app.py
 
 who you will name templates.
 
-4. Then ceeate an html file into "templates"
+4. Then create an html file into "templates"
 
 who you will name index.html and then copy
 
