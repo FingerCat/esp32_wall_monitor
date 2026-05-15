@@ -4,7 +4,9 @@ This is a simple python and html app
 
 to see WiFi signals and motions with an ESP32 with a 3D WebUi.
 
-1. Create a folder named esp32_wall_monitor.
+1. Create a folder named esp32_wall_monitor and
+
+create a file named app.py
 
 2. Copy the python script into it.
 
